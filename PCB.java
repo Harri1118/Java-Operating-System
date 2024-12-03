@@ -120,8 +120,16 @@ public class PCB{
         int i = 0;
         while(virtualToPhysicalMappings[i] != null)
             i++;
+        virtualToPhysicalMappings[i] = new VirtualToPhysicalMapping();
         virtualToPhysicalMappings[i].PhysicalPageNumber = PhysicalAddress;
         return i;
+    }
+
+    public void initMapping(){
+        int i = 0;
+        while(virtualToPhysicalMappings[i] != null)
+            i++;
+        virtualToPhysicalMappings[i] = new VirtualToPhysicalMapping();
     }
 
     // Getter/setter for virtualPageNumbers
@@ -129,7 +137,7 @@ public class PCB{
         return virtualToPhysicalMappings;
     }
 
-    public void setVirtualPageNumbers(VirtualToPhysicalMapping[] vpms) {
+    public void setVirtualToPhysicalMappings(VirtualToPhysicalMapping[] vpms) {
         this.virtualToPhysicalMappings = vpms;
     }
 }

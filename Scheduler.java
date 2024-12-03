@@ -70,13 +70,13 @@ public class Scheduler {
             if(!currentProcess.isDone()){
                 currentProcess.demote();
                 checkDemote();
-                if(currentProcess.getPriority() == OS.Priority.REAL_TIME)
-                    realTimeProcesses.add(currentProcess);
-                else if(currentProcess.getPriority() == OS.Priority.INTERACTIVE)
-                    interactiveProcesses.add(currentProcess);
-                else
-                    backGroundProcesses.add(currentProcess);
             }
+            if(currentProcess.getPriority() == OS.Priority.REAL_TIME)
+                realTimeProcesses.add(currentProcess);
+            else if(currentProcess.getPriority() == OS.Priority.INTERACTIVE)
+                interactiveProcesses.add(currentProcess);
+            else
+                backGroundProcesses.add(currentProcess);
         }
         if(!sleepingProcesses.isEmpty())
             awakeSleepingProcesses();
@@ -154,6 +154,7 @@ public class Scheduler {
             OS.returnValue = currentProcess.popMessageList();
             currentProcess.setWaitingForMessage(false);
         }
+        //System.out.println(currentProcess.toString());
         //System.out.println(currentProcess.getPid() + ", " +currentProcess.getName());
         //System.out.println("ProcessChange complete!");
         //printAllLists();
@@ -253,6 +254,59 @@ public class Scheduler {
         return null;
     }
 
+    // Method to check the mininum about of bytes needed for currentProcess to run properly.
+    private int checkRequiredInts(){
+        VirtualToPhysicalMapping[] mappings = currentProcess.getVirtualToPhysicalMappings();
+        for(int i = 0; i < mappings.length; i++){
+            if(mappings[i] == null)
+                return i;
+        }
+        return mappings.length;
+    }
+
+    // goes through list, finds a random process suitable for getRandomProcess to return.
+    private PCB getSuitableProcess(LinkedList<PCB> list){
+        // Iterate through list
+        int i = 0;
+        int MIN = checkRequiredInts()-1;
+        LinkedList<PCB> finList = new LinkedList<PCB>();
+        while(i < list.size()){
+            // retrieve mappings, check while null if it can hold all of currentProcess' data.
+            VirtualToPhysicalMapping[] mappings = list.get(i).getVirtualToPhysicalMappings();
+            int n = 0;
+            while((mappings[n]) != null && (n < mappings.length-1))
+                n++;
+            // if the minimum is less than n, add i to finList.
+            if(MIN <= n)
+                finList.add(list.get(i));
+            i++;
+        }
+        // get the random pages with mappings, return a random pcb of this pool.
+        if(finList.size() > 0){
+            Random rand = new Random();
+            int j =  rand.nextInt(finList.size());
+            return finList.get(j);
+        }
+        else
+            return null;
+    }
+
+    // getRandomProcess gets a random process from a  random list which has a suitable PCB for a swap.
+    public PCB getRandomProcess(){
+        Random rand = new Random();
+        PCB finPCB = null;
+        while(true){
+            int randNum = rand.nextInt(2);
+            if(randNum == 0 && !backGroundProcesses.isEmpty())
+                finPCB = getSuitableProcess(backGroundProcesses);
+            else if(randNum == 1 && !interactiveProcesses.isEmpty())
+                finPCB = getSuitableProcess(interactiveProcesses);
+            else if(randNum == 2 && !realTimeProcesses.isEmpty())
+                finPCB = getSuitableProcess(backGroundProcesses);
+            if(finPCB != null)
+                return finPCB;
+        }
+    }
     // PrintAllLists made to debug the lists and currentProcess in the scheduler.
     public void printAllLists(){
         System.out.println("---------------------------------------------------------------");

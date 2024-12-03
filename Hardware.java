@@ -1,3 +1,5 @@
+import java.util.HashMap;
+
 public class Hardware {
     // Memory size used for various methods.
     private static final int MEMORY_SIZE = (int) Math.pow(1024,2);
@@ -14,10 +16,9 @@ public class Hardware {
     }
     // Read calculates the page offset, physical page, and the physical address and reads the character within memory. Will return -1 if address is outside Memory
     public static byte Read(int address){
-        int PageOffset = address % 1024;
         int PhysicalPage = getPhysicalPage(address);
-        if(PhysicalPage != -1 || PhysicalPage > MEMORY_SIZE){
-        int PhysicalAddress = (PhysicalPage * 1024) + PageOffset;
+        if(PhysicalPage != -1 || PhysicalPage < MEMORY_SIZE){
+        int PhysicalAddress = generatePhysicalAddress(PhysicalPage, address);
         return Memory[PhysicalAddress];
         }
         else{
@@ -27,14 +28,9 @@ public class Hardware {
     }
     // Write calculates the PageOffset, physical page, and Physical address which is then populated in Memory. Will fail to write if PhysicalPage is invalid.
     public static void Write(int address, byte value){
-        // Page offset calculated
-        int PageOffset = address % 1024;
-        // Get physical page from method
         int PhysicalPage = getPhysicalPage(address);
         if(PhysicalPage != -1 || PhysicalPage > MEMORY_SIZE) {
-            // Get physical address from physical page * 1024 + offset
-            int PhysicalAddress = (PhysicalPage * 1024) + PageOffset;
-            // Set memory[PhysicalAddress] to value
+            int PhysicalAddress = generatePhysicalAddress(PhysicalPage, address);
             Memory[PhysicalAddress] = value;
         }
         else{
@@ -58,6 +54,7 @@ public class Hardware {
                 break;
             }
         }
+        // address = 1047552 causes error.
         // if PhysicalPage == -1, then throw an error
         if(PhysicalPage == -1){
             try {
@@ -85,5 +82,30 @@ public class Hardware {
             for(int n = 0; n < TLB[0].length; n++)
                 TLB[i][n] = -1;
         }
+    }
+
+    // Returns byte directly from memory.
+    public static byte getMemoryDirectly(int pa, int addr){
+        return Memory[generatePhysicalAddress(pa, addr)];
+    }
+
+    // Sets memory directly
+    public static void setMemoryDirectly(int pa, byte i){
+        Memory[pa] = i;
+    }
+
+    // nullifies memory directly.
+    public static void nullifyMemoryDirectly(int pa, int addr){
+        Memory[generatePhysicalAddress(pa, addr)] = 0;
+    }
+
+    // Automatically generates a physical address.
+    public static int generatePhysicalAddress(int pa, int addr){
+        int pageOffset = addr % 1024;
+        int PhysicalAddress = (pa * 1024) + pageOffset;
+        if(PhysicalAddress < 0){
+            int h = 6;
+        }
+        return PhysicalAddress;
     }
 }

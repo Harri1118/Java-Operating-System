@@ -1,9 +1,12 @@
+import java.util.HashMap;
+
 public class Kernel extends Process implements Device{
     // Scheduler member created in kernel.
     private Scheduler scheduler = new Scheduler();
-    private boolean[] freePages = new boolean[1024];
+    private static boolean[] freePages = new boolean[1024];
     private Hardware hardware = new Hardware();
     private VFS vfs = new VFS();
+
     @Override
     public void main(){
         // Infinite while loop to call the switch cases.
@@ -30,9 +33,8 @@ public class Kernel extends Process implements Device{
                     break;
                 // On EXIT_PROGRAM, it calls ExitProcess within the scheduler. vfs then closes & clears its coordinates. It also clears all the virtual pages
                 case EXIT_PROGRAM:
-                    if(checkForMemoryLeak())
-                        System.out.println("Memory leak detected!");
-                    clearBlocks();
+                    //clearBlocks();
+                    exitProcessForMemory();
                     scheduler.ExitProcess();
                     vfs.clear();
                     break;
@@ -107,10 +109,6 @@ public class Kernel extends Process implements Device{
     public int Open(String s) {
         int[] VFSIds = scheduler.currentProcess.getVFSIds();
         int VFSIndex = 0;
-        /*for(int i = 0; i < vfs.getMembers().length; i++){
-            if(vfs.getMembers()[i] != null)
-                System.out.println("vfs member id: " + vfs.getMembers()[i].getId() + " of device " + vfs.getMembers()[i].getDevice().getClass());
-        }*/
         boolean isFound = false;
         for(int i = 0; i < VFSIds.length; i++){
             if(VFSIds[i] == -1){
@@ -158,96 +156,154 @@ public class Kernel extends Process implements Device{
         return vfs.Write(scheduler.currentProcess.getVFSIds()[id], data);
     }
 
-    // checkAvailableBlocks is a quick helper method which returns false if the next 'size' pages from 'index' are free to be allocated or not. If not then return false,
-    // otherwise return true.
-    public boolean checkAvailableBlocks(int index, int size){
-        int endBlock = index + size;
-        for(int i  = index; i < endBlock; i++){
-            if(freePages[i])
-                return false;
-        }
-        return true;
-    }
     // AllocateMemory sets true to the next size pages from an index and returns the virtualAddress within the currentProcesses physical addresses.
     public int AllocateMemory(int size){
-        // Fin = -1
-        int fin = -1;
-        // i is used to find the virtual Address
+        int pagesToAlloc = size/1024;
         int i = 0;
-        // pagesToAlloc calculates the amount of pages needed to be added.
-        int pagesToAlloc = (size/1024);
-        // Check for available memory blocks, add to i if any of the next (size/1024) pages are set to 'true'
-        while(!checkAvailableBlocks(i, pagesToAlloc))
-            i++;
-        fin = i;
-        // Find the endAddress, and add the start address with the amount of pages desired to be allocated together
-        int endAddress = i + pagesToAlloc;
+        // First add each page to mappings
         VirtualToPhysicalMapping[] mappings = scheduler.currentProcess.getVirtualToPhysicalMappings();
-        // While i is less than endAddress, set each block between the two nums and add the physicalAddress of i.
-        while(i < endAddress){
-            freePages[i] = true;
+        while(i < pagesToAlloc){
             mappings[i] = new VirtualToPhysicalMapping();
-            if(i == fin)
-                mappings[i].PhysicalPageNumber = i;
             i++;
         }
-        // Get current processes list
-        // check if the next s pages from pStart are null.
-        // If they're all null, set all of the instances to new.
-        // Return fin as a multiple of 1024, since it represents the virtual address within memory.
+        scheduler.currentProcess.setVirtualToPhysicalMappings(mappings);
+        int fin = 0;
+        // Then find the next available page WITHOUT changing any of the booleans.
+        while(freePages[fin] == true && fin < 1023)
+            fin++;
+        // Return the next available page
         return fin * 1024;
     }
-    // FreeMemory gets a pointer and frees the next s sizes from the pages list.
+    // Clear block clears a singular block in memory.
+    public void clearBlock(int addr, int page){
+        int i = 0;
+        while(i < 1024){
+            Hardware.nullifyMemoryDirectly(page, addr + i);
+            i++;
+        }
+    }
+    // FreeMemory frees a pointer of size s within memory.
     public boolean FreeMemory(int pointer, int size){
-        //System.out.println("Pointer: " + pointer);
-        // pStart represents the page # of which the memory block is on.
-        int pStart = pointer/1024;
-        // pEnd is a representation of the end address of which needs to be cleared all the way from pStart
-        int pEnd = pStart + (size/1024);
-        //System.out.println("pEnd: " + pEnd);
-        VirtualToPhysicalMapping[] VPNums = scheduler.currentProcess.getVirtualToPhysicalMappings();
-        // from pStart to pEnd, free all the blocks inbetween
+        // get pointer, size, end of which the pointer will free up to.
+        int pStart = pointer / 1024;
+        int pSize = size / 1024;
+        int pEnd = pStart + pSize;
+        // get mappings
+        VirtualToPhysicalMapping[] mappings = scheduler.currentProcess.getVirtualToPhysicalMappings();
+        // iterate up to pEnd, clearing each block and freeing up the pages.
         while(pStart < pEnd){
-            if(VPNums[pStart].PhysicalPageNumber != -1){
-                // What do I do?
-            }
-            // if any are are false, throw exception
+            if(mappings[pStart].PhysicalPageNumber != -1)
+                clearBlock(mappings[pStart].PhysicalPageNumber, pointer);
+            mappings[pStart] = null;
             if(!freePages[pStart])
                 return false;
-            // set the page at freePages to false
             freePages[pStart] = false;
-            // set the index pStart and VPNums to -1
-            VPNums[pStart] = null;
-
             pStart ++;
         }
-        scheduler.currentProcess.setVirtualPageNumbers(VPNums);
-        return true;
-    }
-
-    private boolean allPagesAreTaken(){
+        scheduler.currentProcess.setVirtualToPhysicalMappings(mappings);
         return false;
     }
+    // Checks to see if all the pages are taken.
+    private boolean allPagesAreTaken(){
+        for(int i = 0; i < freePages.length; i++){
+            if(!freePages[i])
+                return false;
+        }
+        return true;
+    }
+    // Returns the next available free page.
+    private int findNextFreePage(){
+        int i = 0;
+        while(freePages[i])
+            i++;
+        if(i > freePages.length-1)
+            return -1;
+        return i;
+    }
+    // Send a page's physical memory to storage.
+    private int sendPageToStorage(PCB process, int index){
+        // Get mappings of of index.
+        VirtualToPhysicalMapping[] mappings = process.getVirtualToPhysicalMappings();
+        VirtualToPhysicalMapping mapping = mappings[index];
+        // generate all the data from the page and record all the characters from memory while also nullifying evertything.
+        byte[] page = new byte[1024];
+        for(int i = 0; i < 1024; i++){
+            byte b = Hardware.getMemoryDirectly(mapping.PhysicalPageNumber, index+i);
+            Hardware.nullifyMemoryDirectly(mapping.PhysicalPageNumber, index+i);
+            page[i] = b;
+        }
+        // Get the size of everything written to swapFile
+        int addSize = OS.swapFile.Write(0, page);
+        // Record nextPage as the return value
+        int fin = OS.nextPage;
+        // add size to finPage to record the next iteration.
+        OS.nextPage += addSize;
+        return fin;
+    }
+
+    // sendToPysical sends data from storage back to memory.
+    private void sendToPhysical(int index){
+        // get mappings from current process,
+        VirtualToPhysicalMapping[] mappings = scheduler.currentProcess.getVirtualToPhysicalMappings();
+        // get read from file onto byte of size 1024
+        int readAddress = mappings[index].DiskPageNumber;
+        // Retrieve page from swapFile, then set the memory directly to memory within hardware.
+        byte[] page = OS.swapFile.Read(readAddress, 1024);
+        for(int i = 0; i < 1024; i++)
+            Hardware.setMemoryDirectly(Hardware.generatePhysicalAddress(mappings[index].PhysicalPageNumber, index+i), page[i]);
+    }
+
     /*
     GetMapping is inputted the virtualPageNumber which then updates the current Processes virtual nums as well as the Hardware's TLB. This is used for validating the TLB
     in the case that hardware cannot find the proper mapping for a virtual/physical address.
     */
     public void GetMapping(int virtualPageNumber) throws Exception {
-        try{
             // Get the virtualPageNumbers from the currentProcess
-            VirtualToPhysicalMapping[] virtualPageNumbers = scheduler.currentProcess.getVirtualToPhysicalMappings();
-            // If the virtualPagenumber's address is -1, throw a seg fault
-            if(virtualPageNumbers[virtualPageNumber] == null)
+            VirtualToPhysicalMapping[] virtualMappings = scheduler.currentProcess.getVirtualToPhysicalMappings();
+            //int nextMapping = nextAvailableMapping(virtualMappings);
+            int listIndex = virtualPageNumber % 100;
+            if(virtualMappings[listIndex] == null)
                 throw new Exception("Segmentation fault");
-            if(virtualPageNumbers[virtualPageNumber].PhysicalPageNumber == -1){
-                if(virtualPageNumbers[virtualPageNumber].DiskPageNumber != -1){
-                    // set the diskPageNumber to physcial number?
-
-                }
-                else{
-
-                }
+            if(virtualMappings[listIndex].DiskPageNumber != -1){
+                // get random process
+                PCB victimProcess = scheduler.getRandomProcess();
+                // if physical mappings on data, then write it to the random process.disk
+                if(virtualMappings[listIndex].PhysicalPageNumber != -1)
+                    sendPageToStorage(victimProcess, listIndex);
+                // set currentProcess.disk to currentProcess.physical
+                sendToPhysical(listIndex);
             }
+            else if((virtualPageNumber > freePages.length-1 || allPagesAreTaken()) && virtualMappings[listIndex].PhysicalPageNumber == -1){
+                // Get random process
+                PCB victimProcess = scheduler.getRandomProcess();
+                // get virtualmappings[listIndex]
+                VirtualToPhysicalMapping[] victimMappings = victimProcess.getVirtualToPhysicalMappings();
+                // Write to disk the whole page, and remove it from memory.
+                int diskAddress = sendPageToStorage(victimProcess, listIndex);
+                // Set disk number  of virtualMappings[listIndex].diskPage to nextPage, iterate nextPage
+                victimMappings[listIndex].DiskPageNumber = diskAddress;
+                // Set currentProcess physical address to virtualMappings[listIndex].physical address
+                int evictedPhysicalPage = victimMappings[listIndex].PhysicalPageNumber;
+                // Set victimMappings as -1 since its now on disk.
+                victimMappings[listIndex].PhysicalPageNumber = -1;
+                // Hijack the physicalPagenumber for current process.
+                virtualMappings[listIndex].PhysicalPageNumber = evictedPhysicalPage;
+                // set everything else, and then set the freePage to false.
+                victimProcess.setVirtualToPhysicalMappings(victimMappings);
+                scheduler.currentProcess.setVirtualToPhysicalMappings(virtualMappings);
+                freePages[listIndex] = false;
+            }
+            // If still -1, then find the next free page and set it to true.
+            if (virtualMappings[listIndex].PhysicalPageNumber == -1) {
+                int nextFreePage = findNextFreePage();
+                if(nextFreePage == -1)
+                    throw new Exception("next free page is -1!");
+                freePages[nextFreePage] = true;
+                virtualMappings[listIndex].PhysicalPageNumber = nextFreePage;
+            }
+
+            scheduler.currentProcess.setVirtualToPhysicalMappings(virtualMappings);
+            //else if(virtualPageNumbers[virtualPageNumber].PhysicalPageNumber == -1 && freePages[virtualPageNumber] == true){}
             // make random num 1-10
             int randNum = (int) (Math.random() * 10) + 1;
             // Get the TLB
@@ -255,36 +311,24 @@ public class Kernel extends Process implements Device{
             // if less than 5, set TLB[0][0] to virtualPageNumber and TLB[0][1] to PCB[VirtualPageNumber]
             if (randNum < 5) {
                 TLB[0][0] = virtualPageNumber;
-                TLB[0][1] = virtualPageNumbers[virtualPageNumber].PhysicalPageNumber;
+                TLB[0][1] = virtualMappings[listIndex].PhysicalPageNumber;
             }
             // If more than 5, set TLB[1][0] to virtualPageNumber, and TLB[1][1] to PCB[VirtualPageNumber]
             else if (randNum >= 5) {
                 TLB[1][0] = virtualPageNumber;
-                TLB[1][1] = virtualPageNumbers[virtualPageNumber].PhysicalPageNumber;
+                TLB[1][1] = virtualMappings[listIndex].PhysicalPageNumber;
             }
             // Set the TLB to Hardware
             Hardware.setTLB(TLB);
-        } catch(Exception e){
-            // In a case of an error throw a seg fault, clear the blocks.
-            System.out.println("Segmentation fault");
-            clearBlocks();
-            scheduler.SwitchProcess();
-        }
-
     }
 
-    // clearBlocks frees all of the pages within the kernel.
-    public void clearBlocks(){
-        for(int i = 0; i < freePages.length; i++)
-            freePages[i] = false;
-    }
-
-    // checkForMemoryLeak makes sure that every boolean within pages is false.
-    private boolean checkForMemoryLeak(){
-        for(int i  = 0; i < freePages.length; i++){
-            if(freePages[i])
-                return true;
-        }
-        return false;
+    // nullifies all the processes entires in memory.
+    public void exitProcessForMemory(){
+        // get virtualMappings
+        VirtualToPhysicalMapping[] mappings = scheduler.currentProcess.getVirtualToPhysicalMappings();
+        // clear all the mappings from memory
+        for(int i = 0; i < mappings.length; i++)
+            if(mappings[i] != null)
+                clearBlock(0, mappings[i].PhysicalPageNumber);
     }
 }

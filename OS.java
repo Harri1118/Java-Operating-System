@@ -5,7 +5,7 @@ public class OS {
     private static Kernel kernel;
     // Process enums to pass into kernel.
     public enum CallType {CREATE_PROCESS, SWITCH_PROCESS, EXIT_PROGRAM, SLEEP, OPEN, CLOSE, READ, WRITE, SEEK, GET_PID, GET_PID_BY_NAME, SEND_MESSAGE, WAIT_FOR_MESSAGE,
-        GET_MAPPING, ALLOCATE_MEMORY, FREE_MEMORY
+        GET_MAPPING, ALLOCATE_MEMORY, FREE_MEMORY, FIX_MAPPING
     }
     public enum Priority{REAL_TIME, INTERACTIVE, BACKGROUND}
     // CurrentCall enum variable to be read by the kernel.
@@ -15,7 +15,8 @@ public class OS {
     // returnValue to store the pid of a created process.
     public static Object returnValue = null;
 
-    public static int nextPage = 0;
+    public static int nextPage;
+    public static FakeFileSystem swapFile = new FakeFileSystem();
     public static int CreateProcess(UserLandProcess up) {
         return CreateProcess(up, Priority.INTERACTIVE);
     }
@@ -58,8 +59,7 @@ public class OS {
         // kernel is instantiated & semaphore is released to start its thread.
         kernel = new Kernel();
         kernel.start();
-        FakeFileSystem swapFile = new FakeFileSystem();
-        swapFile.Open("swap");
+        nextPage = swapFile.Open("swap");
         // Two new processes init and idle are created.
         CreateProcess(init, Priority.REAL_TIME);
         CreateProcess(new Idle());
@@ -67,7 +67,7 @@ public class OS {
     // SwitchProcess is used in cases where the OS wants to end the userlandProcess, call the kernel, and
     // then the kernel stops itself to call a new UserLandProcess.
     public static void SwitchProcess(){
-        System.out.println("SwitchProcess called in OS.");
+        //System.out.println("SwitchProcess called in OS.");
         //kernel.getScheduler().currentProcess.stop();
         KernelStart(CallType.SWITCH_PROCESS);
     }
